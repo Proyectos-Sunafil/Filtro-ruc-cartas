@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pandas
+openpyxl
+psycopg2-binary
+python-dotenv
+python-multipart
+pytest
+httpx

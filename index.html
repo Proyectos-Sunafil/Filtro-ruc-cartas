@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Filtro RUC - Cartas</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      background: #f4f6f9;
+      color: #1f2937;
+    }
+    main {
+      width: min(100%, 560px);
+      background: #fff;
+      padding: 32px;
+      border-radius: 16px;
+      box-shadow: 0 12px 36px rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.65rem; }
+    p { color: #5b6472; line-height: 1.5; }
+    .file {
+      display: block;
+      width: 100%;
+      margin-top: 24px;
+      padding: 14px;
+      border: 1px solid #d7dce3;
+      border-radius: 10px;
+      background: #fafbfc;
+    }
+    button {
+      width: 100%;
+      margin-top: 16px;
+      padding: 13px 18px;
+      border: 0;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 650;
+      cursor: pointer;
+      background: #1f5eff;
+      color: #fff;
+    }
+    button:disabled { opacity: .55; cursor: wait; }
+    #estado {
+      min-height: 24px;
+      margin: 18px 0 0;
+      font-size: .95rem;
+    }
+    .nota { font-size: .86rem; margin-top: 22px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Filtro RUC - Cartas</h1>
+    <p>Selecciona el archivo Excel con los RUC y presiona <b>Procesar</b>.</p>
+
+    <input class="file" id="archivo" type="file" accept=".xlsx">
+    <button id="procesar" type="button">Procesar</button>
+    <p id="estado">Esperando archivo.</p>
+    <p class="nota">El resultado se descargará como <b>Resultado.xlsx</b>.</p>
+  </main>
+
+  <script>
+    // Reemplazar por la URL HTTPS que entregue Cloudflare Tunnel.
+    const API_URL = "https://REEMPLAZAR-POR-TUNNEL.trycloudflare.com";
+
+    const archivo = document.getElementById("archivo");
+    const boton = document.getElementById("procesar");
+    const estado = document.getElementById("estado");
+
+    boton.addEventListener("click", async () => {
+      if (!archivo.files.length) {
+        estado.textContent = "Selecciona un archivo .xlsx.";
+        return;
+      }
+
+      const form = new FormData();
+      form.append("archivo", archivo.files[0]);
+      boton.disabled = true;
+      estado.textContent = "Procesando...";
+
+      try {
+        const respuesta = await fetch(`${API_URL}/procesar`, {
+          method: "POST",
+          body: form
+        });
+
+        if (!respuesta.ok) {
+          let mensaje = `Error ${respuesta.status}`;
+          try {
+            const data = await respuesta.json();
+            mensaje = data.detail || mensaje;
+          } catch (_) {}
+          throw new Error(mensaje);
+        }
+
+        const blob = await respuesta.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "Resultado.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        estado.textContent = "Proceso terminado. Resultado descargado.";
+      } catch (e) {
+        estado.textContent = `No se pudo procesar: ${e.message}`;
+      } finally {
+        boton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

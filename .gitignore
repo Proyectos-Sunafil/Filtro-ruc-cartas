@@ -1,0 +1,8 @@
+.env
+api/.env
+__pycache__/
+.pytest_cache/
+*.pyc
+*.xlsx
+.worktrees/
+.superpowers/

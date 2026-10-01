@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SUNAFIL - Filtro RUC</title>
+
+  <!-- Favicon Oficial SUNAFIL -->
+  <link rel="icon" type="image/png" href="assets/img/logo-lupa.png">
+
+  <!-- Tipografía Oficial Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Estilos Modulares Institucionales -->
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+
+<body data-endpoint="/procesar">
+
+  <!-- Cabecera Institucional Limpia -->
+  <header class="app-header">
+    <div class="header-content">
+      <div class="header-brand">
+        <img src="assets/img/logo-sunafil-clean.png" alt="Logotipo Oficial SUNAFIL" class="header-logo">
+      </div>
+
+      <!-- Estado de Conexión en Vivo -->
+      <div id="serverBadge" class="server-badge" title="Estado de la API en la PC de oficina">
+        <span class="badge-dot"></span>
+        <span id="serverStatusText">Verificando...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenedor Principal -->
+  <main class="app-container">
+    <div class="card-main">
+
+      <!-- Cabecera de la Tarjeta con Ayuda Rápida -->
+      <div class="card-head">
+        <div>
+          <h1 class="card-title">Filtro de RUC — Cartas</h1>
+          <p class="card-desc">Cruce de padrón contra historial en base de datos</p>
+        </div>
+        <button type="button" id="criteriaToggle" class="btn-criteria-info" title="Ver criterios de corte">
+          <span class="info-icon">ℹ</span>
+          <span>Criterios</span>
+        </button>
+      </div>
+
+      <!-- Criterios Desplegables (Oculto por defecto para evitar saturación) -->
+      <div class="criteria-box" id="criteriaBox">
+        <div class="criteria-content">
+          <div class="criteria-pills">
+            <span class="c-pill ok"><b>TOTAL ≤ 4</b>: Mantenidos</span>
+            <span class="c-pill err"><b>TOTAL &gt; 4</b>: Retirados</span>
+            <span class="c-pill info">Columna: <b>RUC</b> o <b>V_CODEMP</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alertas Dinámicas -->
+      <div class="alert-box" id="alertBox" role="alert">
+        <span id="alertIcon">⚠️</span>
+        <div id="alertMessage"></div>
+      </div>
+
+      <!-- Formulario de Subida -->
+      <form id="formularioFiltro" onsubmit="return false;">
+
+        <!-- Zona Dropzone Drag & Drop -->
+        <div class="dropzone" id="dropzone">
+          <input class="file-input-hidden" id="archivo" type="file" accept=".xlsx"
+            aria-label="Seleccionar archivo Excel .xlsx">
+          <div id="dropzonePrompt">
+            <div class="dropzone-icon-wrap" aria-hidden="true">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+            </div>
+            <div class="dropzone-title">Suelta tu Excel aquí o <span>haz clic para subir</span></div>
+            <div class="dropzone-hint">Solo archivos .xlsx (hasta 20 MB)</div>
+          </div>
+        </div>
+
+        <!-- Ficha del Archivo Cargado -->
+        <div class="selected-file-card" id="selectedFileCard">
+          <div class="selected-file-info">
+            <div class="excel-icon-pill">XLS</div>
+            <div class="selected-file-details">
+              <div class="selected-file-name" id="selectedFileName">archivo.xlsx</div>
+              <div class="selected-file-size" id="selectedFileSize">0 KB</div>
+            </div>
+          </div>
+          <button type="button" class="btn-remove-file" id="btnRemoveFile" title="Quitar archivo">✕</button>
+        </div>
+
+        <!-- Botón de Procesamiento -->
+        <div class="action-buttons-wrap">
+          <button id="procesar" type="button" class="btn-primary" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+              stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Procesar Padrón</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Estado de Carga / Spinner -->
+      <div class="processing-state" id="processingState">
+        <div class="spinner"></div>
+        <div class="processing-title">Procesando padrón...</div>
+        <div class="processing-subtitle" id="processingSubtitle">Cruzando con PostgreSQL...</div>
+      </div>
+
+      <!-- Panel de Resultados (KPIs) -->
+      <div class="results-panel" id="resultsPanel">
+        <div class="results-header">
+          <div class="results-header-icon">✓</div>
+          <div class="results-header-text">
+            <h3>Proceso completado</h3>
+            <p>Se descargó el archivo <b>Resultado.xlsx</b> con las hojas de trabajo.</p>
+          </div>
+        </div>
+
+        <!-- Métricas Principales -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Total RUCs</div>
+            <div class="kpi-value" id="kpiTotal">—</div>
+          </div>
+          <div class="kpi-card kpi-mantenidos">
+            <div class="kpi-label">Mantenidos (≤ 4)</div>
+            <div class="kpi-value" id="kpiMantenidos">—</div>
+          </div>
+          <div class="kpi-card kpi-retirados">
+            <div class="kpi-label">Retirados (&gt; 4)</div>
+            <div class="kpi-value" id="kpiRetirados">—</div>
+          </div>
+        </div>
+
+        <!-- Acciones -->
+        <div class="results-actions">
+          <button type="button" class="btn-primary" id="btnReDownload">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Descargar de nuevo</span>
+          </button>
+          <button type="button" class="btn-secondary" id="btnReset">
+            <span>Procesar otro archivo</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Pie de Página Institucional -->
+  <footer class="app-footer">
+    <p>Superintendencia Nacional de Fiscalización Laboral - SUNAFIL &copy; 2026. Todos los derechos reservados.</p>
+    <p style="margin-top: 4px;">Desarrollado por la Subdirección de Análisis - DINI - SUNAFIL</p>
+  </footer>
+
+  <!-- Script Modular -->
+  <script src="assets/js/app.js"></script>
+</body>
+
+</html>

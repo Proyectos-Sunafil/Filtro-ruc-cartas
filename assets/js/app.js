@@ -3,8 +3,7 @@
  * Procesamiento 100% en navegador con base maestra estática del repositorio.
  */
 
-const MASTER_URL = "./data/maestro_ruc_total.csv";
-const MASTER_VERSION_URL = "./data/version.json";
+const MASTER_META_URL = "./data/base_meta.json";
 
 const dropzone = document.getElementById("dropzone");
 const archivoInput = document.getElementById("archivo");
@@ -48,48 +47,87 @@ function actualizarBoton() {
   botonProcesar.disabled = !archivoSeleccionado || !maestroListo;
 }
 
+function base64ABytes(texto) {
+  const binario = atob(texto);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+  return bytes;
+}
+
+async function descomprimirGzip(bytes) {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("Este navegador no admite la base comprimida. Usa Chrome o Edge actualizado.");
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function leerVarint(bytes, estado) {
+  let valor = 0;
+  let multiplicador = 1;
+
+  while (estado.pos < bytes.length) {
+    const b = bytes[estado.pos++];
+    valor += (b & 0x7f) * multiplicador;
+    if ((b & 0x80) === 0) return valor;
+    multiplicador *= 128;
+  }
+
+  throw new Error("La base maestra está incompleta.");
+}
+
 async function cargarMaestro() {
   serverBadge.className = "server-badge";
   serverStatusText.textContent = "Cargando base...";
 
   try {
-    let version = "";
-    try {
-      const vr = await fetch(MASTER_VERSION_URL, { cache: "no-store" });
-      if (vr.ok) {
-        const meta = await vr.json();
-        version = meta.version || meta.updated_at || "";
-      }
-    } catch (_) {}
+    const metaRes = await fetch(MASTER_META_URL, { cache: "no-store" });
+    if (!metaRes.ok) throw new Error(\`No se pudieron leer los metadatos (HTTP \${metaRes.status}).\`);
+    const meta = await metaRes.json();
 
-    const url = version ? `${MASTER_URL}?v=${encodeURIComponent(version)}` : MASTER_URL;
-    const res = await fetch(url, { cache: "force-cache" });
-    if (!res.ok) throw new Error(`No se pudo cargar la base maestra (HTTP ${res.status}).`);
+    const urls = Array.from(
+      { length: Number(meta.parts) || 0 },
+      (_, i) => \`./data/base_\${String(i + 1).padStart(2, "0")}.txt?v=\${encodeURIComponent(meta.version || "")}\`
+    );
+    if (!urls.length) throw new Error("La configuración de la base maestra no es válida.");
 
-    const texto = await res.text();
-    const lineas = texto.trim().split(/\r?\n/);
+    const piezas = await Promise.all(urls.map(async (url) => {
+      const res = await fetch(url, { cache: "force-cache" });
+      if (!res.ok) throw new Error(\`No se pudo cargar una parte de la base (HTTP \${res.status}).\`);
+      return (await res.text()).trim();
+    }));
+
+    const comprimido = base64ABytes(piezas.join(""));
+    const bytes = await descomprimirGzip(comprimido);
     const mapa = new Map();
+    const estado = { pos: 0 };
 
-    for (let i = 1; i < lineas.length; i++) {
-      const pos = lineas[i].indexOf(",");
-      if (pos < 0) continue;
-      const ruc = normalizarRuc(lineas[i].slice(0, pos));
-      const total = Number(lineas[i].slice(pos + 1).trim()) || 0;
-      if (ruc) mapa.set(ruc, total);
+    while (estado.pos < bytes.length) {
+      const total = bytes[estado.pos++];
+      const cantidad = leerVarint(bytes, estado);
+      let ruc = 0;
+
+      for (let i = 0; i < cantidad; i++) {
+        ruc += leerVarint(bytes, estado);
+        mapa.set(String(ruc), total);
+      }
     }
 
-    if (!mapa.size) throw new Error("La base maestra está vacía.");
+    if (Number(meta.retirados) && mapa.size !== Number(meta.retirados)) {
+      throw new Error("La base maestra no pasó la validación de integridad.");
+    }
+
     totalesMaestro = mapa;
     maestroListo = true;
     serverBadge.className = "server-badge is-online";
     serverStatusText.textContent = "Base maestra cargada";
-    serverBadge.title = `${mapa.size.toLocaleString()} RUC disponibles`;
+    serverBadge.title = \`\${Number(meta.total_rucs || mapa.size).toLocaleString()} RUC en la base maestra\`;
     actualizarBoton();
   } catch (error) {
     maestroListo = false;
     serverBadge.className = "server-badge is-offline";
     serverStatusText.textContent = "Base no disponible";
-    mostrarAlerta(`No se pudo cargar la base maestra: ${error.message}`);
+    mostrarAlerta(\`No se pudo cargar la base maestra: \${error.message}\`);
     actualizarBoton();
   }
 }

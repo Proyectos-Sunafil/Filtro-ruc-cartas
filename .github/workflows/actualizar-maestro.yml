@@ -1,0 +1,92 @@
+name: Actualizar base maestra
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/actualizar-maestro.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar lector Excel
+        run: python -m pip install --quiet openpyxl
+
+      - name: Descargar Maestro 02 desde Google Drive
+        run: |
+          curl -fL "https://drive.usercontent.google.com/download?id=1flwtXjmVczztIFmojr5I8KtFAq4WzXHM&export=download&confirm=t" -o /tmp/maestro.xlsx
+
+      - name: Generar RUC y TOTAL
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timezone
+          import csv, json
+          from openpyxl import load_workbook
+
+          src = "/tmp/maestro.xlsx"
+          out = Path("data/maestro_ruc_total.csv")
+          meta = Path("data/version.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+
+          wb = load_workbook(src, read_only=True, data_only=True)
+          ws = wb[wb.sheetnames[0]]
+          headers = [str(x or "").strip().upper() for x in next(ws.iter_rows(values_only=True))]
+          try:
+              i_ruc = headers.index("RUC")
+              i_total = headers.index("TOTAL")
+          except ValueError as e:
+              raise SystemExit("El maestro debe contener las columnas RUC y TOTAL") from e
+
+          datos = {}
+          for row in ws.iter_rows(values_only=True):
+              ruc = str(row[i_ruc] or "").strip()
+              if not ruc or ruc.upper() == "RUC":
+                  continue
+              if ruc.endswith(".0") and ruc[:-2].isdigit():
+                  ruc = ruc[:-2]
+              try:
+                  total = int(float(row[i_total] or 0))
+              except (TypeError, ValueError):
+                  total = 0
+              datos[ruc] = total
+
+          with out.open("w", newline="", encoding="utf-8") as f:
+              w = csv.writer(f, lineterminator="\n")
+              w.writerow(["RUC", "TOTAL"])
+              w.writerows(datos.items())
+
+          now = datetime.now(timezone.utc)
+          meta.write_text(json.dumps({
+              "version": now.strftime("%Y%m%d%H%M%S"),
+              "updated_at": now.isoformat(),
+              "rucs": len(datos)
+          }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+          print(f"Base generada: {len(datos):,} RUC")
+          PY
+
+      - name: Guardar base reducida en GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/maestro_ruc_total.csv data/version.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios."
+          else
+            git commit -m "Actualizar base maestra RUC"
+            git push
+          fi

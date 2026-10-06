@@ -28,9 +28,9 @@
       </div>
 
       <!-- Estado de Conexión en Vivo -->
-      <div id="serverBadge" class="server-badge" title="Estado de la API en la PC de oficina">
+      <div id="serverBadge" class="server-badge" title="Estado de la base maestra">
         <span class="badge-dot"></span>
-        <span id="serverStatusText">Verificando...</span>
+        <span id="serverStatusText">Cargando base...</span>
       </div>
     </div>
   </header>
@@ -43,7 +43,7 @@
       <div class="card-head">
         <div>
           <h1 class="card-title">Filtro de RUC — Cartas</h1>
-          <p class="card-desc">Cruce de padrón contra historial en base de datos</p>
+          <p class="card-desc">Cruce de padrón contra base maestra institucional</p>
         </div>
         <button type="button" id="criteriaToggle" class="btn-criteria-info" title="Ver criterios de corte">
           <span class="info-icon">ℹ</span>
@@ -119,7 +119,7 @@
       <div class="processing-state" id="processingState">
         <div class="spinner"></div>
         <div class="processing-title">Procesando padrón...</div>
-        <div class="processing-subtitle" id="processingSubtitle">Cruzando con PostgreSQL...</div>
+        <div class="processing-subtitle" id="processingSubtitle">Cruzando con base maestra...</div>
       </div>
 
       <!-- Panel de Resultados (KPIs) -->
@@ -173,6 +173,9 @@
     <p>Superintendencia Nacional de Fiscalización Laboral - SUNAFIL &copy; 2026. Todos los derechos reservados.</p>
     <p style="margin-top: 4px;">Desarrollado por la Subdirección de Análisis - DINI - SUNAFIL</p>
   </footer>
+
+  <!-- Lectura y generación de Excel en el navegador -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <!-- Script Modular -->
   <script src="assets/js/app.js"></script>

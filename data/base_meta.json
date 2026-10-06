@@ -1,0 +1,7 @@
+{
+  "version": "20261006",
+  "parts": 10,
+  "retirados": 57283,
+  "total_rucs": 185881,
+  "encoding": "gzip+base64+varint-groups"
+}

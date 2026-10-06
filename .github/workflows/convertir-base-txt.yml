@@ -1,0 +1,65 @@
+name: Convertir base maestra a TXT legible
+
+on:
+  push:
+    paths:
+      - ".github/workflows/convertir-base-txt.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  convertir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Convertir base comprimida a TXT legible
+        run: |
+          python - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+
+          p = Path("data/base_maestra.txt")
+          raw = gzip.decompress(base64.b64decode(p.read_text(encoding="utf-8").strip()))
+
+          def varint(data, pos):
+              value = 0
+              mult = 1
+              while pos < len(data):
+                  b = data[pos]
+                  pos += 1
+                  value += (b & 0x7f) * mult
+                  if not (b & 0x80):
+                      return value, pos
+                  mult *= 128
+              raise ValueError("Base incompleta")
+
+          pos = 0
+          rows = []
+          while pos < len(raw):
+              total = raw[pos]
+              pos += 1
+              count, pos = varint(raw, pos)
+              ruc = 0
+              for _ in range(count):
+                  delta, pos = varint(raw, pos)
+                  ruc += delta
+                  rows.append((ruc, total))
+
+          rows.sort()
+          with p.open("w", encoding="utf-8", newline="") as f:
+              f.write("RUC,TOTAL\n")
+              for ruc, total in rows:
+                  f.write(f"{ruc},{total}\n")
+
+          print(f"Generados {len(rows)} RUC")
+          PY
+
+      - name: Guardar TXT legible
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/base_maestra.txt
+          git commit -m "Convertir base maestra a TXT legible"
+          git push

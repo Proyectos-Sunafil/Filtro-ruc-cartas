@@ -3,7 +3,7 @@
  * Procesamiento 100% en navegador con base maestra estática del repositorio.
  */
 
-const MASTER_URL = "./data/base_maestra.txt?v=20261006";
+const MASTER_URL = "./data/base_maestra.txt";
 const MASTER_RETIRADOS = 57283;
 const MASTER_TOTAL_RUCS = 185881;
 
@@ -49,57 +49,22 @@ function actualizarBoton() {
   botonProcesar.disabled = !archivoSeleccionado || !maestroListo;
 }
 
-function base64ABytes(texto) {
-  const binario = atob(texto);
-  const bytes = new Uint8Array(binario.length);
-  for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
-  return bytes;
-}
-
-async function descomprimirGzip(bytes) {
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error("Este navegador no admite la base comprimida. Usa Chrome o Edge actualizado.");
-  }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-function leerVarint(bytes, estado) {
-  let valor = 0;
-  let multiplicador = 1;
-
-  while (estado.pos < bytes.length) {
-    const b = bytes[estado.pos++];
-    valor += (b & 0x7f) * multiplicador;
-    if ((b & 0x80) === 0) return valor;
-    multiplicador *= 128;
-  }
-
-  throw new Error("La base maestra está incompleta.");
-}
-
 async function cargarMaestro() {
   serverBadge.className = "server-badge";
   serverStatusText.textContent = "Cargando base...";
 
   try {
-    const res = await fetch(MASTER_URL, { cache: "force-cache" });
+    const res = await fetch(MASTER_URL, { cache: "no-cache" });
     if (!res.ok) throw new Error(`No se pudo cargar la base maestra (HTTP ${res.status}).`);
 
-    const comprimido = base64ABytes((await res.text()).trim());
-    const bytes = await descomprimirGzip(comprimido);
+    const lineas = (await res.text()).trim().split(/\r?\n/);
     const mapa = new Map();
-    const estado = { pos: 0 };
 
-    while (estado.pos < bytes.length) {
-      const total = bytes[estado.pos++];
-      const cantidad = leerVarint(bytes, estado);
-      let ruc = 0;
-
-      for (let i = 0; i < cantidad; i++) {
-        ruc += leerVarint(bytes, estado);
-        mapa.set(String(ruc), total);
-      }
+    for (let i = 1; i < lineas.length; i++) {
+      const [ruc, total] = lineas[i].split(",");
+      const clave = normalizarRuc(ruc);
+      const valor = Number(total);
+      if (clave && Number.isFinite(valor)) mapa.set(clave, valor);
     }
 
     if (mapa.size !== MASTER_RETIRADOS) {

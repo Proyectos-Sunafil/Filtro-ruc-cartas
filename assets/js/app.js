@@ -82,18 +82,18 @@ async function cargarMaestro() {
 
   try {
     const metaRes = await fetch(MASTER_META_URL, { cache: "no-store" });
-    if (!metaRes.ok) throw new Error(\`No se pudieron leer los metadatos (HTTP \${metaRes.status}).\`);
+    if (!metaRes.ok) throw new Error(`No se pudieron leer los metadatos (HTTP ${metaRes.status}).`);
     const meta = await metaRes.json();
 
     const urls = Array.from(
       { length: Number(meta.parts) || 0 },
-      (_, i) => \`./data/base_\${String(i + 1).padStart(2, "0")}.txt?v=\${encodeURIComponent(meta.version || "")}\`
+      (_, i) => `./data/base_${String(i + 1).padStart(2, "0")}.txt?v=${encodeURIComponent(meta.version || "")}`
     );
     if (!urls.length) throw new Error("La configuración de la base maestra no es válida.");
 
     const piezas = await Promise.all(urls.map(async (url) => {
       const res = await fetch(url, { cache: "force-cache" });
-      if (!res.ok) throw new Error(\`No se pudo cargar una parte de la base (HTTP \${res.status}).\`);
+      if (!res.ok) throw new Error(`No se pudo cargar una parte de la base (HTTP ${res.status}).`);
       return (await res.text()).trim();
     }));
 
@@ -121,13 +121,13 @@ async function cargarMaestro() {
     maestroListo = true;
     serverBadge.className = "server-badge is-online";
     serverStatusText.textContent = "Base maestra cargada";
-    serverBadge.title = \`\${Number(meta.total_rucs || mapa.size).toLocaleString()} RUC en la base maestra\`;
+    serverBadge.title = `${Number(meta.total_rucs || mapa.size).toLocaleString()} RUC en la base maestra`;
     actualizarBoton();
   } catch (error) {
     maestroListo = false;
     serverBadge.className = "server-badge is-offline";
     serverStatusText.textContent = "Base no disponible";
-    mostrarAlerta(\`No se pudo cargar la base maestra: \${error.message}\`);
+    mostrarAlerta(`No se pudo cargar la base maestra: ${error.message}`);
     actualizarBoton();
   }
 }

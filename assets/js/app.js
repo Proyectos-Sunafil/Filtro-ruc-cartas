@@ -1,12 +1,11 @@
 /**
  * SISTEMA DE FILTRO RUC - CARTAS INDUCTIVAS | SUNAFIL
- * Lógica del Frontend: Drag & Drop, Health Check, Procesamiento y Métricas
+ * Procesamiento 100% en navegador con base maestra estática del repositorio.
  */
 
-// Reemplazar por la URL HTTPS que entregue Cloudflare Tunnel o servidor local.
-const API_URL = "https://REEMPLAZAR-POR-TUNNEL.trycloudflare.com";
+const MASTER_URL = "./data/maestro_ruc_total.csv";
+const MASTER_VERSION_URL = "./data/version.json";
 
-// Elementos del DOM
 const dropzone = document.getElementById("dropzone");
 const archivoInput = document.getElementById("archivo");
 const dropzonePrompt = document.getElementById("dropzonePrompt");
@@ -30,55 +29,74 @@ const btnReset = document.getElementById("btnReset");
 
 const serverBadge = document.getElementById("serverBadge");
 const serverStatusText = document.getElementById("serverStatusText");
-
 const criteriaBox = document.getElementById("criteriaBox");
 const criteriaToggle = document.getElementById("criteriaToggle");
 
 let archivoSeleccionado = null;
 let ultimoBlobDescarga = null;
 let intervaloMensajes = null;
+let maestroListo = false;
+let totalesMaestro = new Map();
 
-// ==========================================================================
-// 1. Monitor de Conectividad con la Sede (Health Check)
-// ==========================================================================
+function normalizarRuc(valor) {
+  let s = String(valor ?? "").trim();
+  if (/^\d+\.0$/.test(s)) s = s.slice(0, -2);
+  return s;
+}
 
-async function verificarEstadoServidor() {
-  if (!serverBadge) return;
+function actualizarBoton() {
+  botonProcesar.disabled = !archivoSeleccionado || !maestroListo;
+}
+
+async function cargarMaestro() {
+  serverBadge.className = "server-badge";
+  serverStatusText.textContent = "Cargando base...";
+
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(`${API_URL}/health`, {
-      method: "GET",
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+    let version = "";
+    try {
+      const vr = await fetch(MASTER_VERSION_URL, { cache: "no-store" });
+      if (vr.ok) {
+        const meta = await vr.json();
+        version = meta.version || meta.updated_at || "";
+      }
+    } catch (_) {}
 
-    if (res.ok) {
-      serverBadge.className = "server-badge is-online";
-      serverStatusText.textContent = "Servicio Conectado";
-    } else {
-      serverBadge.className = "server-badge is-offline";
-      serverStatusText.textContent = "Error en Servidor";
+    const url = version ? `${MASTER_URL}?v=${encodeURIComponent(version)}` : MASTER_URL;
+    const res = await fetch(url, { cache: "force-cache" });
+    if (!res.ok) throw new Error(`No se pudo cargar la base maestra (HTTP ${res.status}).`);
+
+    const texto = await res.text();
+    const lineas = texto.trim().split(/\r?\n/);
+    const mapa = new Map();
+
+    for (let i = 1; i < lineas.length; i++) {
+      const pos = lineas[i].indexOf(",");
+      if (pos < 0) continue;
+      const ruc = normalizarRuc(lineas[i].slice(0, pos));
+      const total = Number(lineas[i].slice(pos + 1).trim()) || 0;
+      if (ruc) mapa.set(ruc, total);
     }
-  } catch (_) {
+
+    if (!mapa.size) throw new Error("La base maestra está vacía.");
+    totalesMaestro = mapa;
+    maestroListo = true;
+    serverBadge.className = "server-badge is-online";
+    serverStatusText.textContent = "Base maestra cargada";
+    serverBadge.title = `${mapa.size.toLocaleString()} RUC disponibles`;
+    actualizarBoton();
+  } catch (error) {
+    maestroListo = false;
     serverBadge.className = "server-badge is-offline";
-    serverStatusText.textContent = "Servidor Desconectado";
+    serverStatusText.textContent = "Base no disponible";
+    mostrarAlerta(`No se pudo cargar la base maestra: ${error.message}`);
+    actualizarBoton();
   }
 }
 
-// ==========================================================================
-// 2. Acordeón de Criterios Institucionales
-// ==========================================================================
-
 if (criteriaToggle && criteriaBox) {
-  criteriaToggle.addEventListener("click", () => {
-    criteriaBox.classList.toggle("open");
-  });
+  criteriaToggle.addEventListener("click", () => criteriaBox.classList.toggle("open"));
 }
-
-// ==========================================================================
-// 3. Manejo de Selección de Archivos (Drag & Drop y Clic)
-// ==========================================================================
 
 function formatearBytes(bytes) {
   if (bytes === 0) return "0 Bytes";
@@ -104,16 +122,13 @@ function establecerArchivo(file) {
   ocultarAlerta();
   if (!file) return;
 
-  // Validación: Solo .xlsx
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
     mostrarAlerta("Formato no válido. Debe seleccionar un archivo con extensión .xlsx");
     quitarArchivo();
     return;
   }
 
-  // Validación: Máximo 20 MB
-  const maxBytes = 20 * 1024 * 1024;
-  if (file.size > maxBytes) {
+  if (file.size > 20 * 1024 * 1024) {
     mostrarAlerta("El archivo supera el límite permitido de 20 MB.");
     quitarArchivo();
     return;
@@ -122,10 +137,9 @@ function establecerArchivo(file) {
   archivoSeleccionado = file;
   selectedFileName.textContent = file.name;
   selectedFileSize.textContent = formatearBytes(file.size);
-
   dropzonePrompt.style.display = "none";
   selectedFileCard.style.display = "flex";
-  botonProcesar.disabled = false;
+  actualizarBoton();
 }
 
 function quitarArchivo() {
@@ -133,7 +147,7 @@ function quitarArchivo() {
   archivoInput.value = "";
   selectedFileCard.style.display = "none";
   dropzonePrompt.style.display = "block";
-  botonProcesar.disabled = true;
+  actualizarBoton();
 }
 
 if (btnRemoveFile) {
@@ -144,12 +158,9 @@ if (btnRemoveFile) {
 }
 
 archivoInput.addEventListener("change", (e) => {
-  if (e.target.files && e.target.files[0]) {
-    establecerArchivo(e.target.files[0]);
-  }
+  if (e.target.files && e.target.files[0]) establecerArchivo(e.target.files[0]);
 });
 
-// Eventos de arrastre (Drag & Drop)
 ["dragenter", "dragover"].forEach((evento) => {
   dropzone.addEventListener(evento, (e) => {
     e.preventDefault();
@@ -167,19 +178,13 @@ archivoInput.addEventListener("change", (e) => {
 });
 
 dropzone.addEventListener("drop", (e) => {
-  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    establecerArchivo(e.dataTransfer.files[0]);
-  }
+  if (e.dataTransfer?.files?.length) establecerArchivo(e.dataTransfer.files[0]);
 });
-
-// ==========================================================================
-// 4. Lógica de Procesamiento y Descarga
-// ==========================================================================
 
 const mensajesProgreso = [
   "Leyendo archivo Excel...",
   "Validando columnas RUC / V_CODEMP...",
-  "Cruzando información con base de datos SUNAFIL...",
+  "Cruzando información con base maestra...",
   "Aplicando criterios de depuración (TOTAL ≤ 4)...",
   "Generando libro final con hojas Mantenidos y Retirados..."
 ];
@@ -190,14 +195,12 @@ function iniciarAnimacionProgreso() {
   intervaloMensajes = setInterval(() => {
     indice = (indice + 1) % mensajesProgreso.length;
     processingSubtitle.textContent = mensajesProgreso[indice];
-  }, 2200);
+  }, 1500);
 }
 
 function detenerAnimacionProgreso() {
-  if (intervaloMensajes) {
-    clearInterval(intervaloMensajes);
-    intervaloMensajes = null;
-  }
+  if (intervaloMensajes) clearInterval(intervaloMensajes);
+  intervaloMensajes = null;
 }
 
 function ejecutarDescarga(blob, nombreArchivo = "Resultado.xlsx") {
@@ -211,9 +214,45 @@ function ejecutarDescarga(blob, nombreArchivo = "Resultado.xlsx") {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function crearResultado(matriz, indiceRuc) {
+  const cabecera = matriz[0].map(v => String(v ?? ""));
+  const indiceTotal = cabecera.findIndex(c => c.trim().toUpperCase() === "TOTAL");
+  const mantenidos = [cabecera.slice()];
+  const retirados = [indiceTotal >= 0 ? cabecera.slice() : [...cabecera, "TOTAL"]];
+  let evaluados = 0;
+
+  for (let i = 1; i < matriz.length; i++) {
+    const fila = matriz[i] || [];
+    if (fila.every(v => String(v ?? "").trim() === "")) continue;
+
+    evaluados++;
+    const ruc = normalizarRuc(fila[indiceRuc]);
+    const total = totalesMaestro.get(ruc) ?? 0;
+
+    if (total > 4) {
+      const copia = fila.slice();
+      if (indiceTotal >= 0) copia[indiceTotal] = total;
+      else copia.push(total);
+      retirados.push(copia);
+    } else {
+      mantenidos.push(fila.slice());
+    }
+  }
+
+  return { mantenidos, retirados, evaluados };
+}
+
 botonProcesar.addEventListener("click", async () => {
+  if (!maestroListo) {
+    mostrarAlerta("La base maestra todavía no está disponible.");
+    return;
+  }
   if (!archivoSeleccionado) {
     mostrarAlerta("Selecciona un archivo .xlsx para iniciar.");
+    return;
+  }
+  if (typeof XLSX === "undefined") {
+    mostrarAlerta("No se pudo cargar el componente de Excel. Recarga la página.");
     return;
   }
 
@@ -224,65 +263,56 @@ botonProcesar.addEventListener("click", async () => {
   processingState.style.display = "block";
   iniciarAnimacionProgreso();
 
-  const formData = new FormData();
-  formData.append("archivo", archivoSeleccionado);
-
   try {
-    const respuesta = await fetch(`${API_URL}/procesar`, {
-      method: "POST",
-      body: formData
-    });
+    const buffer = await archivoSeleccionado.arrayBuffer();
+    const libro = XLSX.read(buffer, { type: "array" });
+    if (!libro.SheetNames.length) throw new Error("El archivo no contiene hojas.");
+
+    const hoja = libro.Sheets[libro.SheetNames[0]];
+    const matriz = XLSX.utils.sheet_to_json(hoja, { header: 1, defval: "", raw: false });
+    if (!matriz.length) throw new Error("El archivo está vacío.");
+
+    const cabecera = matriz[0].map(v => String(v ?? "").trim());
+    const indiceRuc = cabecera.findIndex(c => ["RUC", "V_CODEMP"].includes(c.toUpperCase()));
+    if (indiceRuc < 0) throw new Error("El archivo debe contener una columna RUC o V_CODEMP.");
+
+    const resultado = crearResultado(matriz, indiceRuc);
+
+    const salida = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(salida, XLSX.utils.aoa_to_sheet(resultado.mantenidos), "Mantenidos");
+    XLSX.utils.book_append_sheet(salida, XLSX.utils.aoa_to_sheet(resultado.retirados), "Retirados");
+
+    const bytes = XLSX.write(salida, { bookType: "xlsx", type: "array" });
+    ultimoBlobDescarga = new Blob(
+      [bytes],
+      { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+    );
+
+    kpiTotal.textContent = resultado.evaluados.toLocaleString();
+    kpiMantenidos.textContent = (resultado.mantenidos.length - 1).toLocaleString();
+    kpiRetirados.textContent = (resultado.retirados.length - 1).toLocaleString();
 
     detenerAnimacionProgreso();
-
-    if (!respuesta.ok) {
-      let mensajeError = `Error ${respuesta.status}`;
-      try {
-        const errorJson = await respuesta.json();
-        mensajeError = errorJson.detail || mensajeError;
-      } catch (_) {}
-      throw new Error(mensajeError);
-    }
-
-    // Extraer métricas desde las cabeceras HTTP si están presentes
-    const totalEval = respuesta.headers.get("X-Total-Evaluados") || "—";
-    const totalMant = respuesta.headers.get("X-Total-Mantenidos") || "—";
-    const totalRet = respuesta.headers.get("X-Total-Retirados") || "—";
-
-    kpiTotal.textContent = totalEval !== "—" ? Number(totalEval).toLocaleString() : "Completado";
-    kpiMantenidos.textContent = totalMant !== "—" ? Number(totalMant).toLocaleString() : "Generado";
-    kpiRetirados.textContent = totalRet !== "—" ? Number(totalRet).toLocaleString() : "Generado";
-
-    const blob = await respuesta.blob();
-    ultimoBlobDescarga = blob;
-
-    // Descarga automática inmediata
-    ejecutarDescarga(blob, "Resultado.xlsx");
-
-    // Mostrar panel de resultados
+    ejecutarDescarga(ultimoBlobDescarga, "Resultado.xlsx");
     processingState.style.display = "none";
     resultsPanel.style.display = "block";
-
   } catch (error) {
     detenerAnimacionProgreso();
     processingState.style.display = "none";
     dropzone.style.display = "block";
     selectedFileCard.style.display = "flex";
     botonProcesar.style.display = "flex";
+    actualizarBoton();
     mostrarAlerta(`No se pudo procesar: ${error.message}`);
   }
 });
 
-// Botón para re-descargar el archivo si el navegador bloqueó la descarga
 if (btnReDownload) {
   btnReDownload.addEventListener("click", () => {
-    if (ultimoBlobDescarga) {
-      ejecutarDescarga(ultimoBlobDescarga, "Resultado.xlsx");
-    }
+    if (ultimoBlobDescarga) ejecutarDescarga(ultimoBlobDescarga, "Resultado.xlsx");
   });
 }
 
-// Botón para reiniciar y procesar un nuevo archivo
 if (btnReset) {
   btnReset.addEventListener("click", () => {
     ultimoBlobDescarga = null;
@@ -294,9 +324,4 @@ if (btnReset) {
   });
 }
 
-// Inicialización
-document.addEventListener("DOMContentLoaded", () => {
-  verificarEstadoServidor();
-  // Verificar cada 30 segundos
-  setInterval(verificarEstadoServidor, 30000);
-});
+document.addEventListener("DOMContentLoaded", cargarMaestro);

@@ -4,8 +4,6 @@
  */
 
 const MASTER_URL = "./data/base_maestra.txt";
-const MASTER_RETIRADOS = 57283;
-const MASTER_TOTAL_RUCS = 185881;
 
 const dropzone = document.getElementById("dropzone");
 const archivoInput = document.getElementById("archivo");
@@ -67,15 +65,15 @@ async function cargarMaestro() {
       if (clave && Number.isFinite(valor)) mapa.set(clave, valor);
     }
 
-    if (mapa.size !== MASTER_RETIRADOS) {
-      throw new Error("La base maestra no pasó la validación de integridad.");
+    if (!mapa.size) {
+      throw new Error("La base maestra está vacía o no tiene el formato RUC,TOTAL.");
     }
 
     totalesMaestro = mapa;
     maestroListo = true;
     serverBadge.className = "server-badge is-online";
     serverStatusText.textContent = "Base maestra cargada";
-    serverBadge.title = `${MASTER_TOTAL_RUCS.toLocaleString()} RUC en la base maestra`;
+    serverBadge.title = `${mapa.size.toLocaleString()} RUC con TOTAL > 4`;
     actualizarBoton();
   } catch (error) {
     maestroListo = false;
